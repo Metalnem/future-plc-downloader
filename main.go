@@ -102,6 +102,32 @@ func createAnonymousUser(ctx context.Context) (string, error) {
 	return data["uid"].(string), nil
 }
 
+func login(ctx context.Context, uid, email, password string) (string, error) {
+	params := map[string]string{
+		"password":   password,
+		"identifier": email,
+	}
+
+	b, err := json.Marshal(params)
+
+	if err != nil {
+		return "", err
+	}
+
+	form := url.Values{
+		"uid":        {uid},
+		"api_params": {string(b)},
+	}
+
+	data, err := postForm(ctx, baseURL+"/login/", form)
+
+	if err != nil {
+		return "", err
+	}
+
+	return data["download_ticket_no"].(string), nil
+}
+
 func main() {
 	flag.Parse()
 
@@ -111,6 +137,20 @@ func main() {
 		glog.Exit(err)
 	}
 
+	email, password, err := getCredentials()
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	ticket, err := login(context.Background(), uid, email, password)
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
 	fmt.Println(uid)
+	fmt.Println(ticket)
+
 	glog.Flush()
 }
