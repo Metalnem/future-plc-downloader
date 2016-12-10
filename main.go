@@ -24,11 +24,9 @@ var (
 	errMissingCredentials = errors.New("Missing email address or password")
 )
 
-type createAnonymousUserRespone struct {
-	Data struct {
-		UID    string   `json:"uid"`
-		Errors []string `json:"errors"`
-	} `json:"data"`
+type response struct {
+	Data   interface{} `json:"data"`
+	Errors interface{} `json:"errors"`
 }
 
 func getCredentials() (string, string, error) {
@@ -54,14 +52,14 @@ func dumpResponse(resp *http.Response) {
 	}
 }
 
-func postForm(ctx context.Context, url string, form url.Values, data interface{}) error {
+func postForm(ctx context.Context, url string, form url.Values) (map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
 	defer cancel()
 
 	resp, err := ctxhttp.PostForm(ctx, http.DefaultClient, url, form)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -70,10 +68,22 @@ func postForm(ctx context.Context, url string, form url.Values, data interface{}
 	b, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return json.Unmarshal(b, data)
+	var data response
+
+	if err = json.Unmarshal(b, &data); err != nil {
+		return nil, err
+	}
+
+	if errs, ok := data.Errors.(map[string]interface{}); ok {
+		for key, value := range errs {
+			return nil, errors.Errorf("%s: %v", key, value)
+		}
+	}
+
+	return data.Data.(map[string]interface{}), nil
 }
 
 func createAnonymousUser(ctx context.Context) (string, error) {
@@ -83,13 +93,13 @@ func createAnonymousUser(ctx context.Context) (string, error) {
 		"platform":  {"iphone-retina"},
 	}
 
-	var data createAnonymousUserRespone
+	data, err := postForm(ctx, baseURL+"/createAnonymousUser/", form)
 
-	if err := postForm(ctx, baseURL+"/createAnonymousUser/", form, &data); err != nil {
+	if err != nil {
 		return "", err
 	}
 
-	return data.Data.UID, nil
+	return data["uid"].(string), nil
 }
 
 func main() {
