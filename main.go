@@ -10,24 +10,13 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context/ctxhttp"
 )
-
-var (
-	baseURL     = "https://api.futr.efs.foliocloud.net"
-	httpTimeout = 30 * time.Second
-
-	errMissingCredentials = errors.New("Missing email address or password")
-)
-
-type response struct {
-	Data   interface{} `json:"data"`
-	Errors interface{} `json:"errors"`
-}
 
 func getCredentials() (string, string, error) {
 	email := os.Getenv("EDGE_MAGAZINE_EMAIL")
@@ -37,7 +26,7 @@ func getCredentials() (string, string, error) {
 		return email, password, nil
 	}
 
-	return "", "", errMissingCredentials
+	return "", "", errors.New("Missing email address or password")
 }
 
 func dumpResponse(resp *http.Response) {
@@ -52,14 +41,15 @@ func dumpResponse(resp *http.Response) {
 	}
 }
 
-func postForm(ctx context.Context, url string, form url.Values) (map[string]interface{}, error) {
-	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+func postForm(ctx context.Context, query string, form url.Values, result interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	url := fmt.Sprintf("https://api.futr.efs.foliocloud.net/%s/", query)
 	resp, err := ctxhttp.PostForm(ctx, http.DefaultClient, url, form)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer resp.Body.Close()
@@ -68,22 +58,24 @@ func postForm(ctx context.Context, url string, form url.Values) (map[string]inte
 	b, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var data response
-
-	if err = json.Unmarshal(b, &data); err != nil {
-		return nil, err
+	var errs struct {
+		Errors interface{} `json:"errors"`
 	}
 
-	if errs, ok := data.Errors.(map[string]interface{}); ok {
+	if err = json.Unmarshal(b, &errs); err != nil {
+		return err
+	}
+
+	if errs, ok := errs.Errors.(map[string]interface{}); ok {
 		for key, value := range errs {
-			return nil, errors.Errorf("%s: %v", key, value)
+			return errors.Errorf("%s: %v", key, value)
 		}
 	}
 
-	return data.Data.(map[string]interface{}), nil
+	return json.Unmarshal(b, result)
 }
 
 func createAnonymousUser(ctx context.Context) (string, error) {
@@ -93,13 +85,17 @@ func createAnonymousUser(ctx context.Context) (string, error) {
 		"platform":  {"iphone-retina"},
 	}
 
-	data, err := postForm(ctx, baseURL+"/createAnonymousUser/", form)
+	var response struct {
+		Data struct {
+			UID string `json:"uid"`
+		} `json:"data"`
+	}
 
-	if err != nil {
+	if err := postForm(ctx, "createAnonymousUser", form, &response); err != nil {
 		return "", err
 	}
 
-	return data["uid"].(string), nil
+	return response.Data.UID, nil
 }
 
 func login(ctx context.Context, uid, email, password string) (string, error) {
@@ -119,13 +115,83 @@ func login(ctx context.Context, uid, email, password string) (string, error) {
 		"api_params": {string(b)},
 	}
 
-	data, err := postForm(ctx, baseURL+"/login/", form)
+	var response struct {
+		Data struct {
+			Ticket string `json:"download_ticket_no"`
+		} `json:"data"`
+	}
 
-	if err != nil {
+	if err = postForm(ctx, "login", form, &response); err != nil {
 		return "", err
 	}
 
-	return data["download_ticket_no"].(string), nil
+	return response.Data.Ticket, nil
+}
+
+func getDownloadURL(ctx context.Context, uid, ticket string) (int, error) {
+	form := url.Values{
+		"uid":    {uid},
+		"ticket": {ticket},
+	}
+
+	var response struct {
+		Data struct {
+			Status int `json:"status"`
+		} `json:"data"`
+	}
+
+	if err := postForm(ctx, "getDownloadUrl", form, &response); err != nil {
+		return 0, err
+	}
+
+	return response.Data.Status, nil
+}
+
+func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
+	form := url.Values{
+		"uid": {uid},
+	}
+
+	var response struct {
+		Data struct {
+			PurchasedProducts []struct {
+				Product string `json:"sku"`
+			} `json:"purchased_product_list"`
+		} `json:"data"`
+	}
+
+	if err := postForm(ctx, "getPurchasedProductList", form, &response); err != nil {
+		return nil, err
+	}
+
+	var products []string
+
+	for _, product := range response.Data.PurchasedProducts {
+		products = append(products, product.Product)
+	}
+
+	sort.Strings(products)
+
+	return products, nil
+}
+
+func getEntitledProduct(ctx context.Context, uid, product string) (string, error) {
+	form := url.Values{
+		"uid": {uid},
+		"sku": {product},
+	}
+
+	var response struct {
+		Data struct {
+			URL string `json:"secure_download_url"`
+		} `json:"data"`
+	}
+
+	if err := postForm(ctx, "getEntitledProduct", form, &response); err != nil {
+		return "", err
+	}
+
+	return response.Data.URL, nil
 }
 
 func main() {
@@ -149,8 +215,33 @@ func main() {
 		glog.Exit(err)
 	}
 
-	fmt.Println(uid)
-	fmt.Println(ticket)
+	for {
+		status, err := getDownloadURL(context.Background(), uid, ticket)
+
+		if err != nil {
+			glog.Exit(err)
+		}
+
+		if status == 1 {
+			break
+		}
+	}
+
+	products, err := getPurchasedProductList(context.Background(), uid)
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	for _, product := range products {
+		url, err := getEntitledProduct(context.Background(), uid, product)
+
+		if err != nil {
+			glog.Exit(err)
+		}
+
+		fmt.Println(url)
+	}
 
 	glog.Flush()
 }
