@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"time"
-
-	"io/ioutil"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
