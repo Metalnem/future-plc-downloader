@@ -194,32 +194,27 @@ func getEntitledProduct(ctx context.Context, uid, product string) (string, error
 	return response.Data.URL, nil
 }
 
-func main() {
-	flag.Parse()
-
-	uid, err := createAnonymousUser(context.Background())
+func getProductURLs(ctx context.Context, email, password string) ([]string, error) {
+	uid, err := createAnonymousUser(ctx)
 
 	if err != nil {
-		glog.Exit(err)
+		return nil, err
 	}
 
-	email, password, err := getCredentials()
+	ticket, err := login(ctx, uid, email, password)
 
 	if err != nil {
-		glog.Exit(err)
+		return nil, err
 	}
 
-	ticket, err := login(context.Background(), uid, email, password)
-
-	if err != nil {
-		glog.Exit(err)
-	}
+	newCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
 	for {
-		status, err := getDownloadURL(context.Background(), uid, ticket)
+		status, err := getDownloadURL(newCtx, uid, ticket)
 
 		if err != nil {
-			glog.Exit(err)
+			return nil, err
 		}
 
 		if status == 1 {
@@ -227,19 +222,43 @@ func main() {
 		}
 	}
 
-	products, err := getPurchasedProductList(context.Background(), uid)
+	products, err := getPurchasedProductList(ctx, uid)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var urls []string
+
+	for _, product := range products {
+		url, err := getEntitledProduct(ctx, uid, product)
+
+		if err != nil {
+			return nil, err
+		}
+
+		urls = append(urls, url)
+	}
+
+	return urls, nil
+}
+
+func main() {
+	flag.Parse()
+
+	email, password, err := getCredentials()
 
 	if err != nil {
 		glog.Exit(err)
 	}
 
-	for _, product := range products {
-		url, err := getEntitledProduct(context.Background(), uid, product)
+	urls, err := getProductURLs(context.Background(), email, password)
 
-		if err != nil {
-			glog.Exit(err)
-		}
+	if err != nil {
+		glog.Exit(err)
+	}
 
+	for _, url := range urls {
 		fmt.Println(url)
 	}
 
