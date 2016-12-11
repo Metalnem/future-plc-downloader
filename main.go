@@ -22,11 +22,11 @@ func getCredentials() (string, string, error) {
 	email := os.Getenv("EDGE_MAGAZINE_EMAIL")
 	password := os.Getenv("EDGE_MAGAZINE_PASSWORD")
 
-	if email != "" && password != "" {
-		return email, password, nil
+	if email == "" || password == "" {
+		return "", "", errors.New("Missing email address or password")
 	}
 
-	return "", "", errors.New("Missing email address or password")
+	return email, password, nil
 }
 
 func dumpResponse(resp *http.Response) {
