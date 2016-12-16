@@ -18,6 +18,8 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 )
 
+const password = `"F0rd*t3h%3p1c&h0nkY!"`
+
 func getCredentials() (string, string, error) {
 	email := os.Getenv("EDGE_MAGAZINE_EMAIL")
 	password := os.Getenv("EDGE_MAGAZINE_PASSWORD")
