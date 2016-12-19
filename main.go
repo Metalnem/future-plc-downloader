@@ -19,14 +19,16 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"github.com/unidoc/unidoc/pdf"
 	"golang.org/x/net/context/ctxhttp"
 )
 
 const (
-	password   = `"F0rd*t3h%3p1c&h0nkY!"`
 	pagePrefix = "page-"
 	pageSuffix = ".pdf"
 )
+
+var password = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
 
 type page struct {
 	*bytes.Reader
@@ -286,7 +288,7 @@ func getPageNumber(name string) (int, error) {
 }
 
 func getPages(zr *zip.Reader) ([]page, error) {
-	var pages map[int]page
+	pages := make(map[int]page)
 
 	for _, f := range zr.File {
 		if !strings.HasPrefix(f.Name, pagePrefix) || !strings.HasSuffix(f.Name, pageSuffix) {
@@ -335,6 +337,60 @@ func getPages(zr *zip.Reader) ([]page, error) {
 	return result, nil
 }
 
+func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
+	w := pdf.NewPdfWriter()
+
+	for _, page := range pages {
+		r, err := pdf.NewPdfReader(page)
+
+		if err != nil {
+			return nil, err
+		}
+
+		ok, err := r.Decrypt(password)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if !ok {
+			return nil, errors.New("Failed to decrypt page")
+		}
+
+		numPages, err := r.GetNumPages()
+
+		if err != nil {
+			return nil, err
+		}
+
+		for i := 0; i < numPages; i++ {
+			page, err := r.GetPage(i + 1)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if err = w.AddPage(page); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return &w, nil
+}
+
+func save(w *pdf.PdfWriter, path string) error {
+	f, err := os.Create(path)
+
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	return w.Write(f)
+}
+
 func main() {
 	flag.Parse()
 
@@ -350,7 +406,27 @@ func main() {
 		glog.Exit(err)
 	}
 
-	download(context.Background(), urls[0])
+	zr, err := download(context.Background(), urls[0])
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	pages, err := getPages(zr)
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	w, err := unlockAndMerge(pages)
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	if err = save(w, "Edge.pdf"); err != nil {
+		glog.Exit(err)
+	}
 
 	glog.Flush()
 }
