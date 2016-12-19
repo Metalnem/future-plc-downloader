@@ -24,11 +24,18 @@ import (
 )
 
 const (
-	pagePrefix = "page-"
-	pageSuffix = ".pdf"
+	issuePrefix = "com.futurenet.edgemagazine."
+	pagePrefix  = "page-"
+	pageSuffix  = ".pdf"
 )
 
 var password = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
+
+type issue struct {
+	Title  string
+	Number int
+	URL    string
+}
 
 type page struct {
 	*bytes.Reader
@@ -58,7 +65,7 @@ func dumpResponse(resp *http.Response) {
 }
 
 func postForm(ctx context.Context, query string, form url.Values, result interface{}) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	url := fmt.Sprintf("https://api.futr.efs.foliocloud.net/%s/", query)
@@ -171,7 +178,7 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 	var response struct {
 		Data struct {
 			PurchasedProducts []struct {
-				Product string `json:"sku"`
+				ID string `json:"sku"`
 			} `json:"purchased_product_list"`
 		} `json:"data"`
 	}
@@ -180,18 +187,22 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 		return nil, err
 	}
 
-	var products []string
+	var ids []string
 
 	for _, product := range response.Data.PurchasedProducts {
-		products = append(products, product.Product)
+		ids = append(ids, product.ID)
 	}
 
-	sort.Strings(products)
+	sort.Strings(ids)
 
-	return products, nil
+	return ids, nil
 }
 
-func getEntitledProduct(ctx context.Context, uid, product string) (string, error) {
+func getIssueNumber(name string) (int, error) {
+	return strconv.Atoi(strings.TrimPrefix(name, issuePrefix))
+}
+
+func getIssue(ctx context.Context, uid, product string) (issue, error) {
 	form := url.Values{
 		"uid": {uid},
 		"sku": {product},
@@ -199,18 +210,26 @@ func getEntitledProduct(ctx context.Context, uid, product string) (string, error
 
 	var response struct {
 		Data struct {
-			URL string `json:"secure_download_url"`
+			ID    string `json:"sku"`
+			Title string `json:"product_title"`
+			URL   string `json:"secure_download_url"`
 		} `json:"data"`
 	}
 
 	if err := postForm(ctx, "getEntitledProduct", form, &response); err != nil {
-		return "", err
+		return issue{}, err
 	}
 
-	return response.Data.URL, nil
+	n, err := getIssueNumber(response.Data.ID)
+
+	if err != nil {
+		return issue{}, err
+	}
+
+	return issue{Title: response.Data.Title, Number: n, URL: response.Data.URL}, nil
 }
 
-func getProductURLs(ctx context.Context, email, password string) ([]string, error) {
+func getIssues(ctx context.Context, email, password string) ([]issue, error) {
 	uid, err := createAnonymousUser(ctx)
 
 	if err != nil {
@@ -223,7 +242,7 @@ func getProductURLs(ctx context.Context, email, password string) ([]string, erro
 		return nil, err
 	}
 
-	newCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	for {
@@ -238,25 +257,25 @@ func getProductURLs(ctx context.Context, email, password string) ([]string, erro
 		}
 	}
 
-	products, err := getPurchasedProductList(ctx, uid)
+	ids, err := getPurchasedProductList(ctx, uid)
 
 	if err != nil {
 		return nil, err
 	}
 
-	var urls []string
+	var issues []issue
 
-	for _, product := range products {
-		url, err := getEntitledProduct(ctx, uid, product)
+	for _, id := range ids {
+		issue, err := getIssue(ctx, uid, id)
 
 		if err != nil {
 			return nil, err
 		}
 
-		urls = append(urls, url)
+		issues = append(issues, issue)
 	}
 
-	return urls, nil
+	return issues, nil
 }
 
 func download(ctx context.Context, url string) (*zip.Reader, error) {
@@ -379,18 +398,6 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 	return &w, nil
 }
 
-func save(w *pdf.PdfWriter, path string) error {
-	f, err := os.Create(path)
-
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
-
-	return w.Write(f)
-}
-
 func main() {
 	flag.Parse()
 
@@ -400,32 +407,47 @@ func main() {
 		glog.Exit(err)
 	}
 
-	urls, err := getProductURLs(context.Background(), email, password)
+	issues, err := getIssues(context.Background(), email, password)
 
 	if err != nil {
 		glog.Exit(err)
 	}
 
-	zr, err := download(context.Background(), urls[0])
+	for _, issue := range issues {
+		err = func() error {
+			zr, err := download(context.Background(), issue.URL)
 
-	if err != nil {
-		glog.Exit(err)
-	}
+			if err != nil {
+				return err
+			}
 
-	pages, err := getPages(zr)
+			pages, err := getPages(zr)
 
-	if err != nil {
-		glog.Exit(err)
-	}
+			if err != nil {
+				return err
+			}
 
-	w, err := unlockAndMerge(pages)
+			w, err := unlockAndMerge(pages)
 
-	if err != nil {
-		glog.Exit(err)
-	}
+			if err != nil {
+				return err
+			}
 
-	if err = save(w, "Edge.pdf"); err != nil {
-		glog.Exit(err)
+			path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
+			f, err := os.Create(path)
+
+			if err != nil {
+				return err
+			}
+
+			defer f.Close()
+
+			return w.Write(f)
+		}()
+
+		if err != nil {
+			glog.Exit(err)
+		}
 	}
 
 	glog.Flush()
