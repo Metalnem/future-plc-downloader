@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -11,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,7 +22,15 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 )
 
-const password = `"F0rd*t3h%3p1c&h0nkY!"`
+const (
+	password   = `"F0rd*t3h%3p1c&h0nkY!"`
+	pagePrefix = "page-"
+	pageSuffix = ".pdf"
+)
+
+type page struct {
+	*bytes.Reader
+}
 
 func getCredentials() (string, string, error) {
 	email := os.Getenv("EDGE_MAGAZINE_EMAIL")
@@ -245,6 +257,84 @@ func getProductURLs(ctx context.Context, email, password string) ([]string, erro
 	return urls, nil
 }
 
+func download(ctx context.Context, url string) (*zip.Reader, error) {
+	resp, err := http.Get(url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	b, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		return nil, err
+	}
+
+	r := bytes.NewReader(b)
+	l := int64(r.Len())
+
+	return zip.NewReader(r, l)
+}
+
+func getPageNumber(name string) (int, error) {
+	name = strings.TrimPrefix(name, pagePrefix)
+	name = strings.TrimSuffix(name, pageSuffix)
+
+	return strconv.Atoi(name)
+}
+
+func getPages(zr *zip.Reader) ([]page, error) {
+	var pages map[int]page
+
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, pagePrefix) || !strings.HasSuffix(f.Name, pageSuffix) {
+			continue
+		}
+
+		n, err := getPageNumber(f.Name)
+
+		if err != nil {
+			return nil, err
+		}
+
+		fr, err := f.Open()
+
+		if err != nil {
+			return nil, err
+		}
+
+		defer fr.Close()
+
+		b, err := ioutil.ReadAll(fr)
+
+		if err != nil {
+			return nil, err
+		}
+
+		pages[n] = page{bytes.NewReader(b)}
+	}
+
+	if len(pages) == 0 {
+		return nil, errors.New("No pages found")
+	}
+
+	var result []page
+
+	for i := 0; i < len(pages); i++ {
+		page, ok := pages[i]
+
+		if !ok {
+			return nil, errors.Errorf("Page %d is missing", i)
+		}
+
+		result = append(result, page)
+	}
+
+	return result, nil
+}
+
 func main() {
 	flag.Parse()
 
@@ -260,9 +350,7 @@ func main() {
 		glog.Exit(err)
 	}
 
-	for _, url := range urls {
-		fmt.Println(url)
-	}
+	download(context.Background(), urls[0])
 
 	glog.Flush()
 }
