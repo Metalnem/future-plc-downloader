@@ -12,9 +12,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -23,13 +22,15 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 )
 
-const (
-	issuePrefix = "com.futurenet.edgemagazine."
-	pagePrefix  = "page-"
-	pageSuffix  = ".pdf"
-)
+var (
+	pdfPassword = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
 
-var password = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
+	errDecryptionFailed   = errors.New("Failed to decrypt PDF page")
+	errInvalidIssueNumber = errors.New("Invalid issue number received from server")
+	errInvalidPageNumber  = errors.New("Invalid page number received from server")
+	errNoPages            = errors.New("No pages found in archive")
+	errMissingCredentials = errors.New("Missing email address or password")
+)
 
 type issue struct {
 	Title  string
@@ -46,7 +47,7 @@ func getCredentials() (string, string, error) {
 	password := os.Getenv("EDGE_MAGAZINE_PASSWORD")
 
 	if email == "" || password == "" {
-		return "", "", errors.New("Missing email address or password")
+		return "", "", errMissingCredentials
 	}
 
 	return email, password, nil
@@ -199,7 +200,17 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 }
 
 func getIssueNumber(name string) (int, error) {
-	return strconv.Atoi(strings.TrimPrefix(name, issuePrefix))
+	var n int
+
+	if _, err := fmt.Sscanf(name, "com.futurenet.edgemagazine.%d", &n); err != nil {
+		return 0, err
+	}
+
+	if n <= 0 {
+		return 0, errInvalidIssueNumber
+	}
+
+	return n, nil
 }
 
 func getIssue(ctx context.Context, uid, product string) (issue, error) {
@@ -300,17 +311,24 @@ func download(ctx context.Context, url string) (*zip.Reader, error) {
 }
 
 func getPageNumber(name string) (int, error) {
-	name = strings.TrimPrefix(name, pagePrefix)
-	name = strings.TrimSuffix(name, pageSuffix)
+	var n int
 
-	return strconv.Atoi(name)
+	if _, err := fmt.Sscanf(name, "page-%d.pdf", &n); err != nil {
+		return 0, err
+	}
+
+	if n < 0 {
+		return 0, errInvalidPageNumber
+	}
+
+	return n, nil
 }
 
 func getPages(zr *zip.Reader) ([]page, error) {
 	pages := make(map[int]page)
 
 	for _, f := range zr.File {
-		if !strings.HasPrefix(f.Name, pagePrefix) || !strings.HasSuffix(f.Name, pageSuffix) {
+		if filepath.Ext(f.Name) != ".pdf" {
 			continue
 		}
 
@@ -338,7 +356,7 @@ func getPages(zr *zip.Reader) ([]page, error) {
 	}
 
 	if len(pages) == 0 {
-		return nil, errors.New("No pages found")
+		return nil, errNoPages
 	}
 
 	var result []page
@@ -366,14 +384,14 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 			return nil, err
 		}
 
-		ok, err := r.Decrypt(password)
+		ok, err := r.Decrypt(pdfPassword)
 
 		if err != nil {
 			return nil, err
 		}
 
 		if !ok {
-			return nil, errors.New("Failed to decrypt page")
+			return nil, errDecryptionFailed
 		}
 
 		numPages, err := r.GetNumPages()
@@ -398,6 +416,37 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 	return &w, nil
 }
 
+func save(issue issue) error {
+	zr, err := download(context.Background(), issue.URL)
+
+	if err != nil {
+		return err
+	}
+
+	pages, err := getPages(zr)
+
+	if err != nil {
+		return err
+	}
+
+	w, err := unlockAndMerge(pages)
+
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
+	f, err := os.Create(path)
+
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	return w.Write(f)
+}
+
 func main() {
 	flag.Parse()
 
@@ -414,38 +463,7 @@ func main() {
 	}
 
 	for _, issue := range issues {
-		err = func() error {
-			zr, err := download(context.Background(), issue.URL)
-
-			if err != nil {
-				return err
-			}
-
-			pages, err := getPages(zr)
-
-			if err != nil {
-				return err
-			}
-
-			w, err := unlockAndMerge(pages)
-
-			if err != nil {
-				return err
-			}
-
-			path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
-			f, err := os.Create(path)
-
-			if err != nil {
-				return err
-			}
-
-			defer f.Close()
-
-			return w.Write(f)
-		}()
-
-		if err != nil {
+		if err = save(issue); err != nil {
 			glog.Exit(err)
 		}
 	}
