@@ -28,6 +28,7 @@ var (
 	errDecryptionFailed   = errors.New("Failed to decrypt PDF page")
 	errInvalidIssueNumber = errors.New("Invalid issue number received from server")
 	errInvalidPageNumber  = errors.New("Invalid page number received from server")
+	errIssueDoesNotExist  = errors.New("Specified issue does not exist in your library")
 	errNoPages            = errors.New("No pages found in archive")
 	errMissingCredentials = errors.New("Missing email address or password")
 )
@@ -40,6 +41,10 @@ type issue struct {
 
 type page struct {
 	*bytes.Reader
+}
+
+func (issue issue) Filename() string {
+	return fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
 }
 
 func getCredentials() (string, string, error) {
@@ -435,8 +440,7 @@ func save(issue issue) error {
 		return err
 	}
 
-	path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
-	f, err := os.Create(path)
+	f, err := os.Create(issue.Filename())
 
 	if err != nil {
 		return err
@@ -447,8 +451,47 @@ func save(issue issue) error {
 	return w.Write(f)
 }
 
+func downloadAll(issues []issue) error {
+	for _, issue := range issues {
+		if err := save(issue); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func listAll(issues []issue) error {
+	for _, issue := range issues {
+		if _, err := fmt.Printf("%d. %s\n", issue.Number, issue.Title); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func downloadSingle(issues []issue, number int) error {
+	for _, issue := range issues {
+		if issue.Number == number {
+			return save(issue)
+		}
+	}
+
+	return errIssueDoesNotExist
+}
+
 func main() {
+	list := flag.Bool("list", false, "List all available issues")
+	all := flag.Bool("all", false, "Download all available issues")
+	single := flag.Int("single", 0, "Download single issue with the specified ID")
+
 	flag.Parse()
+
+	if !*list && !*all && *single <= 0 {
+		flag.Usage()
+		os.Exit(1)
+	}
 
 	email, password, err := getCredentials()
 
@@ -462,10 +505,17 @@ func main() {
 		glog.Exit(err)
 	}
 
-	for _, issue := range issues {
-		if err = save(issue); err != nil {
-			glog.Exit(err)
-		}
+	switch {
+	case *list:
+		err = listAll(issues)
+	case *all:
+		err = downloadAll(issues)
+	case *single > 0:
+		err = downloadSingle(issues, *single)
+	}
+
+	if err != nil {
+		glog.Exit(err)
 	}
 
 	glog.Flush()
