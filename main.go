@@ -27,6 +27,8 @@ const usage = `Usage of Edge Magazine downloader:
     	List all available issues
   -all
     	Download all available issues
+  -from
+    	Download all issues starting with the specified ID
   -single int
     	Download single issue with the specified ID
   -email string
@@ -487,6 +489,18 @@ func listAll(issues []issue) error {
 	return nil
 }
 
+func downloadFrom(issues []issue, number int) error {
+	for _, issue := range issues {
+		if issue.Number >= number {
+			if err := save(issue); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func downloadSingle(issues []issue, number int) error {
 	for _, issue := range issues {
 		if issue.Number == number {
@@ -500,6 +514,7 @@ func downloadSingle(issues []issue, number int) error {
 func main() {
 	list := flag.Bool("list", false, "List all available issues")
 	all := flag.Bool("all", false, "Download all available issues")
+	from := flag.Int("from", 0, "Download all issues starting with the specified ID")
 	single := flag.Int("single", 0, "Download single issue with the specified ID")
 
 	var email, password string
@@ -509,7 +524,7 @@ func main() {
 
 	flag.Parse()
 
-	if !*list && !*all && *single <= 0 {
+	if !*list && !*all && *from <= 0 && *single <= 0 {
 		fmt.Println(usage)
 		os.Exit(1)
 	}
@@ -532,6 +547,8 @@ func main() {
 		err = listAll(issues)
 	case *all:
 		err = downloadAll(issues)
+	case *from > 0:
+		err = downloadFrom(issues, *from)
 	case *single > 0:
 		err = downloadSingle(issues, *single)
 	}
