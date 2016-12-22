@@ -22,6 +22,18 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 )
 
+const usage = `Usage of Edge Magazine downloader:
+  -list
+    	List all available issues
+  -all
+    	Download all available issues
+  -single int
+    	Download single issue with the specified ID
+  -email string
+    	Account email
+  -password string
+    	Account password`
+
 var (
 	pdfPassword = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
 
@@ -47,9 +59,13 @@ func (issue issue) Filename() string {
 	return fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
 }
 
-func getCredentials() (string, string, error) {
-	email := os.Getenv("EDGE_MAGAZINE_EMAIL")
-	password := os.Getenv("EDGE_MAGAZINE_PASSWORD")
+func getCredentials(email, password string) (string, string, error) {
+	if email != "" && password != "" {
+		return email, password, nil
+	}
+
+	email = os.Getenv("EDGE_MAGAZINE_EMAIL")
+	password = os.Getenv("EDGE_MAGAZINE_PASSWORD")
 
 	if email == "" || password == "" {
 		return "", "", errMissingCredentials
@@ -486,17 +502,23 @@ func main() {
 	all := flag.Bool("all", false, "Download all available issues")
 	single := flag.Int("single", 0, "Download single issue with the specified ID")
 
+	var email, password string
+
+	flag.StringVar(&email, "email", "", "Account email")
+	flag.StringVar(&password, "password", "", "Account password")
+
 	flag.Parse()
 
 	if !*list && !*all && *single <= 0 {
-		flag.Usage()
+		fmt.Println(usage)
 		os.Exit(1)
 	}
 
-	email, password, err := getCredentials()
+	email, password, err := getCredentials(email, password)
 
 	if err != nil {
-		glog.Exit(err)
+		fmt.Println(usage)
+		os.Exit(1)
 	}
 
 	issues, err := getIssues(context.Background(), email, password)
