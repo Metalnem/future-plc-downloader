@@ -473,16 +473,6 @@ func save(issue issue, path string) (err error) {
 	return w.Write(f)
 }
 
-func downloadAll(issues []issue) error {
-	for _, issue := range issues {
-		if err := save(issue, issue.Filename()); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func listAll(issues []issue) error {
 	for _, issue := range issues {
 		if _, err := fmt.Printf("%d. %s\n", issue.Number, issue.Title); err != nil {
@@ -493,26 +483,52 @@ func listAll(issues []issue) error {
 	return nil
 }
 
+func downloadAll(issues []issue) error {
+	_, err := downloadFunc(issues, func(issue) bool {
+		return true
+	})
+
+	return err
+}
+
 func downloadFrom(issues []issue, number int) error {
-	for _, issue := range issues {
-		if issue.Number >= number {
-			if err := save(issue, issue.Filename()); err != nil {
-				return err
-			}
-		}
+	_, err := downloadFunc(issues, func(issue issue) bool {
+		return issue.Number >= number
+	})
+
+	return err
+}
+
+func downloadSingle(issues []issue, number int) error {
+	count, err := downloadFunc(issues, func(issue issue) bool {
+		return issue.Number == number
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if count == 0 {
+		return errIssueDoesNotExist
 	}
 
 	return nil
 }
 
-func downloadSingle(issues []issue, number int) error {
+func downloadFunc(issues []issue, f func(issue) bool) (int, error) {
+	count := 0
+
 	for _, issue := range issues {
-		if issue.Number == number {
-			return save(issue, issue.Filename())
+		if f(issue) {
+			if err := save(issue, issue.Filename()); err != nil {
+				return 0, err
+			}
+
+			count++
 		}
 	}
 
-	return errIssueDoesNotExist
+	return count, nil
 }
 
 func main() {
