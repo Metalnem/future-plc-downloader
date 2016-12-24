@@ -439,7 +439,7 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 	return &w, nil
 }
 
-func save(issue issue) error {
+func save(issue issue, path string) (err error) {
 	zr, err := download(context.Background(), issue.URL)
 
 	if err != nil {
@@ -458,20 +458,24 @@ func save(issue issue) error {
 		return err
 	}
 
-	f, err := os.Create(issue.Filename())
+	f, err := os.Create(path)
 
 	if err != nil {
 		return err
 	}
 
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	return w.Write(f)
 }
 
 func downloadAll(issues []issue) error {
 	for _, issue := range issues {
-		if err := save(issue); err != nil {
+		if err := save(issue, issue.Filename()); err != nil {
 			return err
 		}
 	}
@@ -492,7 +496,7 @@ func listAll(issues []issue) error {
 func downloadFrom(issues []issue, number int) error {
 	for _, issue := range issues {
 		if issue.Number >= number {
-			if err := save(issue); err != nil {
+			if err := save(issue, issue.Filename()); err != nil {
 				return err
 			}
 		}
@@ -504,7 +508,7 @@ func downloadFrom(issues []issue, number int) error {
 func downloadSingle(issues []issue, number int) error {
 	for _, issue := range issues {
 		if issue.Number == number {
-			return save(issue)
+			return save(issue, issue.Filename())
 		}
 	}
 
