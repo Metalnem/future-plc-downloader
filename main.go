@@ -57,10 +57,6 @@ type page struct {
 	*bytes.Reader
 }
 
-func (issue issue) Filename() string {
-	return fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
-}
-
 func getCredentials(email, password string) (string, string, error) {
 	if email != "" && password != "" {
 		return email, password, nil
@@ -520,7 +516,14 @@ func downloadFunc(issues []issue, f func(issue) bool) (int, error) {
 
 	for _, issue := range issues {
 		if f(issue) {
-			if err := save(issue, issue.Filename()); err != nil {
+			path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
+			temp := fmt.Sprintf("%s.part", path)
+
+			if err := save(issue, temp); err != nil {
+				return 0, err
+			}
+
+			if err := os.Rename(temp, path); err != nil {
 				return 0, err
 			}
 

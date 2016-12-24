@@ -1,4 +1,3 @@
-Use temp files when writing converted PDF  
 Create a release  
 Remove dead media links  
 Fix read timeouts  
