@@ -34,7 +34,9 @@ const usage = `Usage of Edge Magazine downloader:
   -email string
     	Account email
   -password string
-    	Account password`
+    	Account password
+  -uid string
+    	Account UID`
 
 var (
 	pdfPassword = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
@@ -259,8 +261,12 @@ func getIssue(ctx context.Context, uid, product string) (issue, error) {
 	return issue{Title: response.Data.Title, Number: n, URL: response.Data.URL}, nil
 }
 
-func getIssues(ctx context.Context, email, password string) ([]issue, error) {
-	uid, err := createAnonymousUser(ctx)
+func getIssues(ctx context.Context, email, password, uid string) ([]issue, error) {
+	var err error
+
+	if uid == "" {
+		uid, err = createAnonymousUser(ctx)
+	}
 
 	if err != nil {
 		return nil, err
@@ -540,10 +546,11 @@ func main() {
 	from := flag.Int("from", 0, "Download all issues starting with the specified ID")
 	single := flag.Int("single", 0, "Download single issue with the specified ID")
 
-	var email, password string
+	var email, password, uid string
 
 	flag.StringVar(&email, "email", "", "Account email")
 	flag.StringVar(&password, "password", "", "Account password")
+	flag.StringVar(&uid, "uid", "", "Account UID")
 
 	flag.Parse()
 
@@ -559,7 +566,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	issues, err := getIssues(context.Background(), email, password)
+	issues, err := getIssues(context.Background(), email, password, uid)
 
 	if err != nil {
 		glog.Exit(err)

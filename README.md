@@ -26,6 +26,8 @@ Usage of Edge Magazine downloader:
     	Account email
   -password string
     	Account password
+  -uid string
+    	Account UID
 ```
 
 ## Example
