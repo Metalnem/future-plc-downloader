@@ -123,10 +123,10 @@ func postForm(ctx context.Context, query string, form url.Values, result interfa
 	return json.Unmarshal(b, result)
 }
 
-func createAnonymousUser(ctx context.Context) (string, error) {
+func (m magazine) createAnonymousUser(ctx context.Context) (string, error) {
 	form := url.Values{
-		"appKey":    {"RymlyxWkRBKjDKsG3TpLAQ"},
-		"secretKey": {"b9dd34da8c269e44879ea1be2a0f9f7c"},
+		"appKey":    {m.appKey},
+		"secretKey": {m.secretKey},
 		"platform":  {"iphone-retina"},
 	}
 
@@ -220,10 +220,10 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 	return ids, nil
 }
 
-func getIssueNumber(name string) (int, error) {
+func (m magazine) getIssueNumber(name string) (int, error) {
 	var n int
 
-	if _, err := fmt.Sscanf(name, "com.futurenet.edgemagazine.%d", &n); err != nil {
+	if _, err := fmt.Sscanf(name, fmt.Sprintf("com.futurenet.%s.%s", m.id, "%d"), &n); err != nil {
 		return 0, err
 	}
 
@@ -234,7 +234,7 @@ func getIssueNumber(name string) (int, error) {
 	return n, nil
 }
 
-func getIssue(ctx context.Context, uid, product string) (issue, error) {
+func (m magazine) getIssue(ctx context.Context, uid, product string) (issue, error) {
 	form := url.Values{
 		"uid": {uid},
 		"sku": {product},
@@ -252,7 +252,7 @@ func getIssue(ctx context.Context, uid, product string) (issue, error) {
 		return issue{}, err
 	}
 
-	n, err := getIssueNumber(response.Data.ID)
+	n, err := m.getIssueNumber(response.Data.ID)
 
 	if err != nil {
 		return issue{}, err
@@ -261,11 +261,11 @@ func getIssue(ctx context.Context, uid, product string) (issue, error) {
 	return issue{Title: response.Data.Title, Number: n, URL: response.Data.URL}, nil
 }
 
-func getIssues(ctx context.Context, email, password, uid string) ([]issue, error) {
+func (m magazine) getIssues(ctx context.Context, email, password, uid string) ([]issue, error) {
 	var err error
 
 	if uid == "" {
-		uid, err = createAnonymousUser(ctx)
+		uid, err = m.createAnonymousUser(ctx)
 	}
 
 	if err != nil {
@@ -302,7 +302,7 @@ func getIssues(ctx context.Context, email, password, uid string) ([]issue, error
 	var issues []issue
 
 	for _, id := range ids {
-		issue, err := getIssue(ctx, uid, id)
+		issue, err := m.getIssue(ctx, uid, id)
 
 		if err != nil {
 			return nil, err
@@ -485,24 +485,24 @@ func listAll(issues []issue) error {
 	return nil
 }
 
-func downloadAll(issues []issue) error {
-	_, err := downloadFunc(issues, func(issue) bool {
+func (m magazine) downloadAll(issues []issue) error {
+	_, err := m.downloadFunc(issues, func(issue) bool {
 		return true
 	})
 
 	return err
 }
 
-func downloadFrom(issues []issue, number int) error {
-	_, err := downloadFunc(issues, func(issue issue) bool {
+func (m magazine) downloadFrom(issues []issue, number int) error {
+	_, err := m.downloadFunc(issues, func(issue issue) bool {
 		return issue.Number >= number
 	})
 
 	return err
 }
 
-func downloadSingle(issues []issue, number int) error {
-	count, err := downloadFunc(issues, func(issue issue) bool {
+func (m magazine) downloadSingle(issues []issue, number int) error {
+	count, err := m.downloadFunc(issues, func(issue issue) bool {
 		return issue.Number == number
 	})
 
@@ -517,12 +517,12 @@ func downloadSingle(issues []issue, number int) error {
 	return nil
 }
 
-func downloadFunc(issues []issue, f func(issue) bool) (int, error) {
+func (m magazine) downloadFunc(issues []issue, f func(issue) bool) (int, error) {
 	count := 0
 
 	for _, issue := range issues {
 		if f(issue) {
-			path := fmt.Sprintf("Edge Magazine %d (%s).pdf", issue.Number, issue.Title)
+			path := fmt.Sprintf("%s %d (%s).pdf", m.name, issue.Number, issue.Title)
 			temp := fmt.Sprintf("%s.part", path)
 
 			if err := save(issue, temp); err != nil {
@@ -566,7 +566,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	issues, err := getIssues(context.Background(), email, password, uid)
+	m := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
+	issues, err := m.getIssues(context.Background(), email, password, uid)
 
 	if err != nil {
 		glog.Exit(err)
@@ -576,11 +577,11 @@ func main() {
 	case *list:
 		err = listAll(issues)
 	case *all:
-		err = downloadAll(issues)
+		err = m.downloadAll(issues)
 	case *from > 0:
-		err = downloadFrom(issues, *from)
+		err = m.downloadFrom(issues, *from)
 	case *single > 0:
-		err = downloadSingle(issues, *single)
+		err = m.downloadSingle(issues, *single)
 	}
 
 	if err != nil {
