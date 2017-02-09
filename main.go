@@ -192,6 +192,34 @@ func getDownloadURL(ctx context.Context, uid, ticket string) (int, error) {
 	return response.Data.Status, nil
 }
 
+func getProductList(ctx context.Context, uid string) ([]string, error) {
+	form := url.Values{
+		"uid": {uid},
+	}
+
+	var response struct {
+		Data struct {
+			Products []struct {
+				ID string `json:"sku"`
+			} `json:"product_list"`
+		} `json:"data"`
+	}
+
+	if err := postForm(ctx, "getProductList", form, &response); err != nil {
+		return nil, err
+	}
+
+	var ids []string
+
+	for _, product := range response.Data.Products {
+		ids = append(ids, product.ID)
+	}
+
+	sort.Strings(ids)
+
+	return ids, nil
+}
+
 func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
 	form := url.Values{
 		"uid": {uid},
