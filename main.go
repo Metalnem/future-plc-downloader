@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,7 +18,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/unidoc/unidoc/pdf"
-	"golang.org/x/net/context/ctxhttp"
 )
 
 const usage = `Usage of Edge Magazine downloader:
@@ -74,75 +72,6 @@ func getCredentials(email, password string) (string, string, error) {
 	return email, password, nil
 }
 
-func dumpResponse(resp *http.Response) {
-	if glog.V(1) {
-		body, err := httputil.DumpResponse(resp, true)
-
-		if err != nil {
-			glog.Fatal(err)
-		}
-
-		glog.V(1).Infof("%s", body)
-	}
-}
-
-func postForm(ctx context.Context, query string, form url.Values, result interface{}) error {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	url := fmt.Sprintf("https://api.futr.efs.foliocloud.net/%s/", query)
-	resp, err := ctxhttp.PostForm(ctx, http.DefaultClient, url, form)
-
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-	dumpResponse(resp)
-
-	b, err := ioutil.ReadAll(resp.Body)
-
-	if err != nil {
-		return err
-	}
-
-	var errs struct {
-		Errors interface{} `json:"errors"`
-	}
-
-	if err = json.Unmarshal(b, &errs); err != nil {
-		return err
-	}
-
-	if errs, ok := errs.Errors.(map[string]interface{}); ok {
-		for key, value := range errs {
-			return errors.Errorf("%s: %v", key, value)
-		}
-	}
-
-	return json.Unmarshal(b, result)
-}
-
-func (m magazine) createAnonymousUser(ctx context.Context) (string, error) {
-	form := url.Values{
-		"appKey":    {m.appKey},
-		"secretKey": {m.secretKey},
-		"platform":  {"iphone-retina"},
-	}
-
-	var response struct {
-		Data struct {
-			UID string `json:"uid"`
-		} `json:"data"`
-	}
-
-	if err := postForm(ctx, "createAnonymousUser", form, &response); err != nil {
-		return "", err
-	}
-
-	return response.Data.UID, nil
-}
-
 func login(ctx context.Context, uid, email, password string) (string, error) {
 	params := map[string]string{
 		"password":   password,
@@ -192,34 +121,6 @@ func getDownloadURL(ctx context.Context, uid, ticket string) (int, error) {
 	return response.Data.Status, nil
 }
 
-func getProductList(ctx context.Context, uid string) ([]string, error) {
-	form := url.Values{
-		"uid": {uid},
-	}
-
-	var response struct {
-		Data struct {
-			Products []struct {
-				ID string `json:"sku"`
-			} `json:"product_list"`
-		} `json:"data"`
-	}
-
-	if err := postForm(ctx, "getProductList", form, &response); err != nil {
-		return nil, err
-	}
-
-	var ids []string
-
-	for _, product := range response.Data.Products {
-		ids = append(ids, product.ID)
-	}
-
-	sort.Strings(ids)
-
-	return ids, nil
-}
-
 func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
 	form := url.Values{
 		"uid": {uid},
@@ -242,8 +143,6 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 	for _, product := range response.Data.PurchasedProducts {
 		ids = append(ids, product.ID)
 	}
-
-	sort.Strings(ids)
 
 	return ids, nil
 }
@@ -293,7 +192,7 @@ func (m magazine) getIssues(ctx context.Context, email, password, uid string) ([
 	var err error
 
 	if uid == "" {
-		uid, err = m.createAnonymousUser(ctx)
+		uid, err = createAnonymousUser(ctx, m)
 	}
 
 	if err != nil {
@@ -327,6 +226,7 @@ func (m magazine) getIssues(ctx context.Context, email, password, uid string) ([
 		return nil, err
 	}
 
+	sort.Strings(ids)
 	var issues []issue
 
 	for _, id := range ids {
