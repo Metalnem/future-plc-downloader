@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -415,21 +416,24 @@ func main() {
 	mag := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
 	var s *Session
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
 	if uid == "" {
-		s, err = NewSession(context.Background(), mag)
+		s, err = NewSession(ctx, mag)
 	} else {
-		s, err = RestoreSession(context.Background(), mag, uid)
+		s, err = RestoreSession(ctx, mag, uid)
 	}
 
 	if err != nil {
 		glog.Exit(err)
 	}
 
-	if err = s.Login(context.Background(), email, password); err != nil {
+	if err = s.Login(ctx, email, password); err != nil {
 		glog.Exit(err)
 	}
 
-	issues, err := s.getIssues(context.Background())
+	issues, err := s.getIssues(ctx)
 
 	if err != nil {
 		glog.Exit(err)
