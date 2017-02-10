@@ -55,6 +55,14 @@ type page struct {
 	*bytes.Reader
 }
 
+func getValue(value, env string) string {
+	if value != "" {
+		return value
+	}
+
+	return os.Getenv(env)
+}
+
 func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
 	form := url.Values{
 		"uid": {uid},
@@ -390,17 +398,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if email == "" {
-		email = os.Getenv("EDGE_MAGAZINE_EMAIL")
-	}
-
-	if password == "" {
-		password = os.Getenv("EDGE_MAGAZINE_PASSWORD")
-	}
-
-	if uid == "" {
-		uid = os.Getenv("EDGE_MAGAZINE_UID")
-	}
+	email = getValue(email, "EDGE_MAGAZINE_EMAIL")
+	password = getValue(email, "EDGE_MAGAZINE_PASSWORD")
+	uid = getValue(email, "EDGE_MAGAZINE_UID")
 
 	if email == "" || password == "" {
 		fmt.Println(usage)
