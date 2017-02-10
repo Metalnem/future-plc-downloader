@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -13,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -70,55 +68,6 @@ func getCredentials(email, password string) (string, string, error) {
 	}
 
 	return email, password, nil
-}
-
-func login(ctx context.Context, uid, email, password string) (string, error) {
-	params := map[string]string{
-		"password":   password,
-		"identifier": email,
-	}
-
-	b, err := json.Marshal(params)
-
-	if err != nil {
-		return "", err
-	}
-
-	form := url.Values{
-		"uid":        {uid},
-		"api_params": {string(b)},
-	}
-
-	var response struct {
-		Data struct {
-			Ticket string `json:"download_ticket_no"`
-		} `json:"data"`
-	}
-
-	if err = postForm(ctx, "login", form, &response); err != nil {
-		return "", err
-	}
-
-	return response.Data.Ticket, nil
-}
-
-func getDownloadURL(ctx context.Context, uid, ticket string) (int, error) {
-	form := url.Values{
-		"uid":    {uid},
-		"ticket": {ticket},
-	}
-
-	var response struct {
-		Data struct {
-			Status int `json:"status"`
-		} `json:"data"`
-	}
-
-	if err := postForm(ctx, "getDownloadUrl", form, &response); err != nil {
-		return 0, err
-	}
-
-	return response.Data.Status, nil
 }
 
 func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
@@ -188,39 +137,8 @@ func (m magazine) getIssue(ctx context.Context, uid, product string) (issue, err
 	return issue{Title: response.Data.Title, Number: n, URL: response.Data.URL}, nil
 }
 
-func (m magazine) getIssues(ctx context.Context, email, password, uid string) ([]issue, error) {
-	var err error
-
-	if uid == "" {
-		uid, err = createAnonymousUser(ctx, m)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	ticket, err := login(ctx, uid, email, password)
-
-	if err != nil {
-		return nil, err
-	}
-
-	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	for {
-		status, err := getDownloadURL(newCtx, uid, ticket)
-
-		if err != nil {
-			return nil, err
-		}
-
-		if status == 1 {
-			break
-		}
-	}
-
-	ids, err := getPurchasedProductList(ctx, uid)
+func (s *Session) getIssues(ctx context.Context) ([]issue, error) {
+	ids, err := getPurchasedProductList(ctx, s.uid)
 
 	if err != nil {
 		return nil, err
@@ -230,7 +148,7 @@ func (m magazine) getIssues(ctx context.Context, email, password, uid string) ([
 	var issues []issue
 
 	for _, id := range ids {
-		issue, err := m.getIssue(ctx, uid, id)
+		issue, err := s.mag.getIssue(ctx, s.uid, id)
 
 		if err != nil {
 			return nil, err
@@ -494,8 +412,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
-	issues, err := m.getIssues(context.Background(), email, password, uid)
+	mag := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
+	var s *Session
+
+	if uid == "" {
+		s, err = NewSession(context.Background(), mag)
+	} else {
+		s, err = RestoreSession(context.Background(), mag, uid)
+	}
+
+	if err != nil {
+		glog.Exit(err)
+	}
+
+	if err = s.Login(context.Background(), email, password); err != nil {
+		glog.Exit(err)
+	}
+
+	issues, err := s.getIssues(context.Background())
 
 	if err != nil {
 		glog.Exit(err)
@@ -505,11 +439,11 @@ func main() {
 	case *list:
 		err = listAll(issues)
 	case *all:
-		err = m.downloadAll(issues)
+		err = mag.downloadAll(issues)
 	case *from > 0:
-		err = m.downloadFrom(issues, *from)
+		err = mag.downloadFrom(issues, *from)
 	case *single > 0:
-		err = m.downloadSingle(issues, *single)
+		err = mag.downloadSingle(issues, *single)
 	}
 
 	if err != nil {

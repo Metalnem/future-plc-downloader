@@ -153,3 +153,73 @@ func RestoreSession(ctx context.Context, mag magazine, uid string) (*Session, er
 
 	return &Session{uid: uid, mag: mag}, nil
 }
+
+func (s *Session) login(ctx context.Context, email, password string) (string, error) {
+	params := map[string]string{
+		"password":   password,
+		"identifier": email,
+	}
+
+	b, err := json.Marshal(params)
+
+	if err != nil {
+		return "", err
+	}
+
+	form := url.Values{
+		"uid":        {s.uid},
+		"api_params": {string(b)},
+	}
+
+	var response struct {
+		Data struct {
+			Ticket string `json:"download_ticket_no"`
+		} `json:"data"`
+	}
+
+	if err = postForm(ctx, "login", form, &response); err != nil {
+		return "", err
+	}
+
+	return response.Data.Ticket, nil
+}
+
+func (s *Session) getDownloadURL(ctx context.Context, ticket string) (int, error) {
+	form := url.Values{
+		"uid":    {s.uid},
+		"ticket": {ticket},
+	}
+
+	var response struct {
+		Data struct {
+			Status int `json:"status"`
+		} `json:"data"`
+	}
+
+	if err := postForm(ctx, "getDownloadUrl", form, &response); err != nil {
+		return 0, err
+	}
+
+	return response.Data.Status, nil
+}
+
+// Login authenticates existing session with the given email and password.
+func (s *Session) Login(ctx context.Context, email, password string) error {
+	ticket, err := s.login(ctx, email, password)
+
+	if err != nil {
+		return err
+	}
+
+	for {
+		status, err := s.getDownloadURL(ctx, ticket)
+
+		if err != nil {
+			return err
+		}
+
+		if status == 1 {
+			return nil
+		}
+	}
+}

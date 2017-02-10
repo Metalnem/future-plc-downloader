@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestGetProductList(t *testing.T) {
+func TestNewSession(t *testing.T) {
 	for _, mag := range magazines {
 		t.Run(mag.name, func(t *testing.T) {
 			t.Parallel()
