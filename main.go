@@ -43,7 +43,6 @@ var (
 	errInvalidPageNumber  = errors.New("Invalid page number received from server")
 	errIssueDoesNotExist  = errors.New("Specified issue does not exist in your library")
 	errNoPages            = errors.New("No pages found in archive")
-	errMissingCredentials = errors.New("Missing email address or password")
 )
 
 type issue struct {
@@ -54,21 +53,6 @@ type issue struct {
 
 type page struct {
 	*bytes.Reader
-}
-
-func getCredentials(email, password string) (string, string, error) {
-	if email != "" && password != "" {
-		return email, password, nil
-	}
-
-	email = os.Getenv("EDGE_MAGAZINE_EMAIL")
-	password = os.Getenv("EDGE_MAGAZINE_PASSWORD")
-
-	if email == "" || password == "" {
-		return "", "", errMissingCredentials
-	}
-
-	return email, password, nil
 }
 
 func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) {
@@ -406,18 +390,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	email, password, err := getCredentials(email, password)
+	if email == "" {
+		email = os.Getenv("EDGE_MAGAZINE_EMAIL")
+	}
 
-	if err != nil {
+	if password == "" {
+		password = os.Getenv("EDGE_MAGAZINE_PASSWORD")
+	}
+
+	if uid == "" {
+		uid = os.Getenv("EDGE_MAGAZINE_UID")
+	}
+
+	if email == "" || password == "" {
 		fmt.Println(usage)
 		os.Exit(1)
 	}
 
 	mag := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
-	var s *Session
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
+	var s *Session
+	var err error
 
 	if uid == "" {
 		s, err = NewSession(ctx, mag)
