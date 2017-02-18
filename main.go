@@ -332,12 +332,14 @@ func (m magazine) downloadFunc(issues []issue, f func(issue) bool) (int, error) 
 			path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
 			temp := fmt.Sprintf("%s.part", path)
 
-			if err := save(issue, temp); err != nil {
-				return 0, err
-			}
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				if err := save(issue, temp); err != nil {
+					return 0, err
+				}
 
-			if err := os.Rename(temp, path); err != nil {
-				return 0, err
+				if err := os.Rename(temp, path); err != nil {
+					return 0, err
+				}
 			}
 
 			count++
