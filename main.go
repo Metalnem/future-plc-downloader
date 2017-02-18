@@ -287,6 +287,16 @@ func save(ctx context.Context, issue issue, path string) (err error) {
 	return w.Write(f)
 }
 
+func printUsage() {
+	fmt.Println(usage)
+	fmt.Println()
+	fmt.Println("Available magazines:")
+
+	for _, mag := range magazines {
+		fmt.Printf("  %s\n", mag.name)
+	}
+}
+
 func downloadAll(ctx context.Context, m magazine, issues []issue) error {
 	for _, issue := range issues {
 		path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
@@ -322,7 +332,7 @@ func main() {
 	uid = getValue(uid, "EDGE_MAGAZINE_UID")
 
 	if name == "" || email == "" || password == "" {
-		fmt.Println(usage)
+		printUsage()
 		os.Exit(1)
 	}
 
