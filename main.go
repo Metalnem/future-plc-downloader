@@ -24,10 +24,8 @@ const usage = `Usage of Edge Magazine downloader:
     	List all available issues
   -all
     	Download all available issues
-  -from
-    	Download all issues starting with the specified ID
-  -single int
-    	Download single issue with the specified ID
+  -single string
+    	Download single issue with the specified title
   -email string
     	Account email
   -password string
@@ -38,17 +36,15 @@ const usage = `Usage of Edge Magazine downloader:
 var (
 	pdfPassword = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
 
-	errDecryptionFailed   = errors.New("Failed to decrypt PDF page")
-	errInvalidIssueNumber = errors.New("Invalid issue number received from server")
-	errInvalidPageNumber  = errors.New("Invalid page number received from server")
-	errIssueDoesNotExist  = errors.New("Specified issue does not exist in your library")
-	errNoPages            = errors.New("No pages found in archive")
+	errDecryptionFailed  = errors.New("Failed to decrypt PDF page")
+	errInvalidPageNumber = errors.New("Invalid page number received from server")
+	errIssueDoesNotExist = errors.New("Specified issue does not exist in your library")
+	errNoPages           = errors.New("No pages found in archive")
 )
 
 type issue struct {
-	Title  string
-	Number int
-	URL    string
+	Title string
+	URL   string
 }
 
 type page struct {
@@ -89,20 +85,6 @@ func getPurchasedProductList(ctx context.Context, uid string) ([]string, error) 
 	return ids, nil
 }
 
-func (m magazine) getIssueNumber(name string) (int, error) {
-	var n int
-
-	if _, err := fmt.Sscanf(name, fmt.Sprintf("com.futurenet.%s.%s", m.id, "%d"), &n); err != nil {
-		return 0, err
-	}
-
-	if n <= 0 {
-		return 0, errInvalidIssueNumber
-	}
-
-	return n, nil
-}
-
 func (m magazine) getIssue(ctx context.Context, uid, product string) (issue, error) {
 	form := url.Values{
 		"uid": {uid},
@@ -121,13 +103,7 @@ func (m magazine) getIssue(ctx context.Context, uid, product string) (issue, err
 		return issue{}, err
 	}
 
-	n, err := m.getIssueNumber(response.Data.ID)
-
-	if err != nil {
-		return issue{}, err
-	}
-
-	return issue{Title: response.Data.Title, Number: n, URL: response.Data.URL}, nil
+	return issue{Title: response.Data.Title, URL: response.Data.URL}, nil
 }
 
 func (s *Session) getIssues(ctx context.Context) ([]issue, error) {
@@ -316,7 +292,7 @@ func save(issue issue, path string) (err error) {
 
 func listAll(issues []issue) error {
 	for _, issue := range issues {
-		if _, err := fmt.Printf("%d. %s\n", issue.Number, issue.Title); err != nil {
+		if _, err := fmt.Println(issue.Title); err != nil {
 			return err
 		}
 	}
@@ -332,17 +308,9 @@ func (m magazine) downloadAll(issues []issue) error {
 	return err
 }
 
-func (m magazine) downloadFrom(issues []issue, number int) error {
-	_, err := m.downloadFunc(issues, func(issue issue) bool {
-		return issue.Number >= number
-	})
-
-	return err
-}
-
-func (m magazine) downloadSingle(issues []issue, number int) error {
+func (m magazine) downloadSingle(issues []issue, title string) error {
 	count, err := m.downloadFunc(issues, func(issue issue) bool {
-		return issue.Number == number
+		return issue.Title == title
 	})
 
 	if err != nil {
@@ -361,7 +329,7 @@ func (m magazine) downloadFunc(issues []issue, f func(issue) bool) (int, error) 
 
 	for _, issue := range issues {
 		if f(issue) {
-			path := fmt.Sprintf("%s %d (%s).pdf", m.name, issue.Number, issue.Title)
+			path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
 			temp := fmt.Sprintf("%s.part", path)
 
 			if err := save(issue, temp); err != nil {
@@ -382,8 +350,7 @@ func (m magazine) downloadFunc(issues []issue, f func(issue) bool) (int, error) 
 func main() {
 	list := flag.Bool("list", false, "List all available issues")
 	all := flag.Bool("all", false, "Download all available issues")
-	from := flag.Int("from", 0, "Download all issues starting with the specified ID")
-	single := flag.Int("single", 0, "Download single issue with the specified ID")
+	single := flag.String("single", "", "Download single issue with the specified title")
 
 	var email, password, uid string
 
@@ -393,7 +360,7 @@ func main() {
 
 	flag.Parse()
 
-	if !*list && !*all && *from <= 0 && *single <= 0 {
+	if !*list && !*all && *single == "" {
 		fmt.Println(usage)
 		os.Exit(1)
 	}
@@ -440,9 +407,7 @@ func main() {
 		err = listAll(issues)
 	case *all:
 		err = mag.downloadAll(issues)
-	case *from > 0:
-		err = mag.downloadFrom(issues, *from)
-	case *single > 0:
+	case *single != "":
 		err = mag.downloadSingle(issues, *single)
 	}
 

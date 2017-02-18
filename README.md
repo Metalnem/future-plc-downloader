@@ -18,10 +18,8 @@ Usage of Edge Magazine downloader:
     	List all available issues
   -all
     	Download all available issues
-  -from
-    	Download all issues starting with the specified ID
-  -single int
-    	Download single issue with the specified ID
+  -single string
+    	Download single issue with the specified title
   -email string
     	Account email
   -password string
