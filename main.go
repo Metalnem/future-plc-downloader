@@ -399,8 +399,8 @@ func main() {
 	}
 
 	email = getValue(email, "EDGE_MAGAZINE_EMAIL")
-	password = getValue(email, "EDGE_MAGAZINE_PASSWORD")
-	uid = getValue(email, "EDGE_MAGAZINE_UID")
+	password = getValue(password, "EDGE_MAGAZINE_PASSWORD")
+	uid = getValue(uid, "EDGE_MAGAZINE_UID")
 
 	if email == "" || password == "" {
 		fmt.Println(usage)
