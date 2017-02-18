@@ -52,3 +52,13 @@ var magazines = []magazine{
 	{"Total Guitar", "y49rHJvTTuyo7RKVa8I7Aw", "dc1595f1bc7933327df39674c1163377", "totalguitarmagazine"},
 	{"Windows Help & Advice", "vKx686oTRx6f_Ujd9-POuQ", "0acc0597c77414c7cc1219c8ce9307de", "officialwindowsmagazine"},
 }
+
+func getMagazine(name string) (magazine, bool) {
+	for _, mag := range magazines {
+		if mag.name == name {
+			return mag, true
+		}
+	}
+
+	return magazine{}, false
+}

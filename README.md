@@ -14,12 +14,8 @@ This command line tool gives you the option to download Edge Magazine issues fro
 ```
 $ ./edge-magazine-downloader
 Usage of Edge Magazine downloader:
-  -list
-    	List all available issues
-  -all
-    	Download all available issues
-  -single string
-    	Download single issue with the specified title
+  -name
+    	Magazine name
   -email string
     	Account email
   -password string
@@ -31,5 +27,5 @@ Usage of Edge Magazine downloader:
 ## Example
 
 ```
-$ ./edge-magazine-downloader -email user@example.org -password secret123 -all
+$ ./edge-magazine-downloader -name Edge -email user@example.org -password secret123 
 ```

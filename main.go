@@ -20,12 +20,8 @@ import (
 )
 
 const usage = `Usage of Edge Magazine downloader:
-  -list
-    	List all available issues
-  -all
-    	Download all available issues
-  -single string
-    	Download single issue with the specified title
+  -name
+    	Magazine name
   -email string
     	Account email
   -password string
@@ -36,6 +32,7 @@ const usage = `Usage of Edge Magazine downloader:
 var (
 	pdfPassword = []byte(`"F0rd*t3h%3p1c&h0nkY!"`)
 
+	errUnknownMagazine   = errors.New("Unknown magazine name")
 	errDecryptionFailed  = errors.New("Failed to decrypt PDF page")
 	errInvalidPageNumber = errors.New("Invalid page number received from server")
 	errIssueDoesNotExist = errors.New("Specified issue does not exist in your library")
@@ -256,8 +253,8 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 	return &w, nil
 }
 
-func save(issue issue, path string) (err error) {
-	zr, err := download(context.Background(), issue.URL)
+func save(ctx context.Context, issue issue, path string) (err error) {
+	zr, err := download(ctx, issue.URL)
 
 	if err != nil {
 		return err
@@ -290,93 +287,50 @@ func save(issue issue, path string) (err error) {
 	return w.Write(f)
 }
 
-func listAll(issues []issue) error {
+func downloadAll(ctx context.Context, m magazine, issues []issue) error {
 	for _, issue := range issues {
-		if _, err := fmt.Println(issue.Title); err != nil {
-			return err
-		}
-	}
+		path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
+		temp := fmt.Sprintf("%s.part", path)
 
-	return nil
-}
-
-func (m magazine) downloadAll(issues []issue) error {
-	_, err := m.downloadFunc(issues, func(issue) bool {
-		return true
-	})
-
-	return err
-}
-
-func (m magazine) downloadSingle(issues []issue, title string) error {
-	count, err := m.downloadFunc(issues, func(issue issue) bool {
-		return issue.Title == title
-	})
-
-	if err != nil {
-		return err
-	}
-
-	if count == 0 {
-		return errIssueDoesNotExist
-	}
-
-	return nil
-}
-
-func (m magazine) downloadFunc(issues []issue, f func(issue) bool) (int, error) {
-	count := 0
-
-	for _, issue := range issues {
-		if f(issue) {
-			path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
-			temp := fmt.Sprintf("%s.part", path)
-
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				if err := save(issue, temp); err != nil {
-					return 0, err
-				}
-
-				if err := os.Rename(temp, path); err != nil {
-					return 0, err
-				}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := save(ctx, issue, temp); err != nil {
+				return err
 			}
 
-			count++
+			if err := os.Rename(temp, path); err != nil {
+				return err
+			}
 		}
+
 	}
 
-	return count, nil
+	return nil
 }
 
 func main() {
-	list := flag.Bool("list", false, "List all available issues")
-	all := flag.Bool("all", false, "Download all available issues")
-	single := flag.String("single", "", "Download single issue with the specified title")
+	var name, email, password, uid string
 
-	var email, password, uid string
-
+	flag.StringVar(&name, "name", "", "Magazine name")
 	flag.StringVar(&email, "email", "", "Account email")
 	flag.StringVar(&password, "password", "", "Account password")
 	flag.StringVar(&uid, "uid", "", "Account UID")
 
 	flag.Parse()
 
-	if !*list && !*all && *single == "" {
-		fmt.Println(usage)
-		os.Exit(1)
-	}
-
 	email = getValue(email, "EDGE_MAGAZINE_EMAIL")
 	password = getValue(password, "EDGE_MAGAZINE_PASSWORD")
 	uid = getValue(uid, "EDGE_MAGAZINE_UID")
 
-	if email == "" || password == "" {
+	if name == "" || email == "" || password == "" {
 		fmt.Println(usage)
 		os.Exit(1)
 	}
 
-	mag := magazine{"Edge", "RymlyxWkRBKjDKsG3TpLAQ", "b9dd34da8c269e44879ea1be2a0f9f7c", "edgemagazine"}
+	mag, ok := getMagazine(name)
+
+	if !ok {
+		glog.Exit(errUnknownMagazine)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -404,16 +358,7 @@ func main() {
 		glog.Exit(err)
 	}
 
-	switch {
-	case *list:
-		err = listAll(issues)
-	case *all:
-		err = mag.downloadAll(issues)
-	case *single != "":
-		err = mag.downloadSingle(issues, *single)
-	}
-
-	if err != nil {
+	if err = downloadAll(context.Background(), mag, issues); err != nil {
 		glog.Exit(err)
 	}
 
