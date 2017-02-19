@@ -290,7 +290,7 @@ func save(ctx context.Context, issue issue, path string) (err error) {
 func printUsage() {
 	fmt.Println(usage)
 	fmt.Println()
-	fmt.Println("Available magazines:")
+	fmt.Println("Supported magazines:")
 
 	for _, mag := range magazines {
 		fmt.Printf("  %s\n", mag.name)
