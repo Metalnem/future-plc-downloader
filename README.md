@@ -6,9 +6,9 @@ This command line tool gives you the option to download Future plc magazine issu
 
 ## Downloads
 
-[Windows](https://github.com/Metalnem/edge-magazine-downloader/releases/download/v1.0.0/edge-magazine-downloader-win64-1.0.0.zip)  
-[Mac OS X](https://github.com/Metalnem/edge-magazine-downloader/releases/download/v1.0.0/edge-magazine-downloader-darwin64-1.0.0.zip)  
-[Linux](https://github.com/Metalnem/edge-magazine-downloader/releases/download/v1.0.0/edge-magazine-downloader-linux64-1.0.0.zip)
+[Windows](https://github.com/Metalnem/future-plc-downloader/releases/download/v1.1.0/future-plc-downloader-win64-1.1.0.zip)  
+[Mac OS X](https://github.com/Metalnem/future-plc-downloader/releases/download/v1.1.0/future-plc-downloader-darwin64-1.1.0.zip)  
+[Linux](https://github.com/Metalnem/future-plc-downloader/releases/download/v1.1.0/future-plc-downloader-linux64-1.1.0.zip)
 
 ## Usage
 
