@@ -19,7 +19,7 @@ import (
 	"github.com/unidoc/unidoc/pdf"
 )
 
-const usage = `Usage of Edge Magazine downloader:
+const usage = `Usage of Future plc downloader:
   -name
     	Magazine name
   -email string
@@ -165,7 +165,10 @@ func getPages(zr *zip.Reader) ([]page, error) {
 	pages := make(map[int]page)
 
 	for _, f := range zr.File {
-		if filepath.Ext(f.Name) != ".pdf" {
+		ext := filepath.Ext(f.Name)
+		base := filepath.Base(f.Name)
+
+		if ext != ".pdf" || base[0] == '.' {
 			continue
 		}
 
@@ -215,20 +218,29 @@ func unlockAndMerge(pages []page) (*pdf.PdfWriter, error) {
 	w := pdf.NewPdfWriter()
 
 	for _, page := range pages {
+
 		r, err := pdf.NewPdfReader(page)
 
 		if err != nil {
 			return nil, err
 		}
 
-		ok, err := r.Decrypt(pdfPassword)
+		encrypted, err := r.IsEncrypted()
 
 		if err != nil {
 			return nil, err
 		}
 
-		if !ok {
-			return nil, errDecryptionFailed
+		if encrypted {
+			ok, err := r.Decrypt(pdfPassword)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if !ok {
+				return nil, errDecryptionFailed
+			}
 		}
 
 		numPages, err := r.GetNumPages()
@@ -297,24 +309,25 @@ func printUsage() {
 	}
 }
 
-func downloadAll(ctx context.Context, m magazine, issues []issue) error {
+func downloadAll(ctx context.Context, m magazine, issues []issue) {
 	for _, issue := range issues {
 		path := fmt.Sprintf("%s %s.pdf", m.name, issue.Title)
 		temp := fmt.Sprintf("%s.part", path)
 
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if err := save(ctx, issue, temp); err != nil {
-				return err
-			}
-
-			if err := os.Rename(temp, path); err != nil {
-				return err
-			}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			continue
 		}
 
-	}
+		if err := save(ctx, issue, temp); err != nil {
+			glog.Error(err)
+			continue
+		}
 
-	return nil
+		if err := os.Rename(temp, path); err != nil {
+			glog.Error(err)
+			continue
+		}
+	}
 }
 
 func main() {
@@ -368,9 +381,6 @@ func main() {
 		glog.Exit(err)
 	}
 
-	if err = downloadAll(context.Background(), mag, issues); err != nil {
-		glog.Exit(err)
-	}
-
+	downloadAll(context.Background(), mag, issues)
 	glog.Flush()
 }
